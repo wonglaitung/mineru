@@ -88,7 +88,7 @@ class MDParser:
         return tables
 
     def _parse_html_tables(self) -> list[dict]:
-        """解析 HTML <table> 标签"""
+        """解析 HTML <table> 标签，支持 rowspan 和 colspan"""
         tables = []
         pattern = r'<table[^>]*>(.*?)</table>'
         matches = re.finditer(pattern, self.content, re.DOTALL | re.IGNORECASE)
@@ -97,47 +97,110 @@ class MDParser:
             table_html = match.group(1)
             line_num = self.content[:match.start()].count('\n') + 1
 
-            # 解析表格内容
-            rows = []
-            headers = []
-
             # 提取所有行
             row_pattern = r'<tr[^>]*>(.*?)</tr>'
             row_matches = re.findall(row_pattern, table_html, re.DOTALL | re.IGNORECASE)
 
-            for row_idx, row_content in enumerate(row_matches):
-                # 提取单元格
-                cells = []
-                # td 和 th
-                cell_pattern = r'<t[dh][^>]*>(.*?)</t[dh]>'
-                cell_matches = re.findall(cell_pattern, row_content, re.DOTALL | re.IGNORECASE)
+            # 解析带合并单元格的表格
+            matrix = []  # 二维矩阵存储所有单元格
+            rowspan_tracker = {}  # 记录跨行单元格: {col_index: (content, remaining_rows)}
 
-                for cell_content in cell_matches:
-                    # 清理 HTML 标签
-                    clean_text = re.sub(r'<[^>]+>', '', cell_content)
-                    clean_text = clean_text.strip().replace('\n', ' ')
-                    cells.append(clean_text)
+            for row_content in row_matches:
+                # 解析单元格及其属性
+                cells_data = self._parse_html_cells(row_content)
 
-                if cells:
-                    # 判断是否为表头行（第一行包含 th 或第一个非空行）
-                    if row_idx == 0 and '<th' in row_content.lower():
-                        headers = cells
+                if not cells_data:
+                    continue
+
+                # 构建当前行（处理 rowspan 占位）
+                current_row = []
+                col_index = 0
+                cell_idx = 0
+
+                while col_index < len(cells_data) + len(rowspan_tracker):
+                    # 检查是否有 rowspan 占位
+                    if col_index in rowspan_tracker:
+                        content, remaining = rowspan_tracker[col_index]
+                        current_row.append(content)
+                        if remaining > 1:
+                            rowspan_tracker[col_index] = (content, remaining - 1)
+                        else:
+                            del rowspan_tracker[col_index]
+                        col_index += 1
+                    elif cell_idx < len(cells_data):
+                        cell_content, colspan, rowspan = cells_data[cell_idx]
+
+                        # 处理 colspan：重复内容
+                        for _ in range(colspan):
+                            current_row.append(cell_content)
+
+                        # 处理 rowspan：记录跨行
+                        if rowspan > 1:
+                            for offset in range(colspan):
+                                rowspan_tracker[col_index + offset] = (cell_content, rowspan - 1)
+
+                        col_index += colspan
+                        cell_idx += 1
                     else:
-                        rows.append(cells)
+                        break
 
-            # 如果没有明确的表头，使用第一行作为表头
-            if not headers and rows:
-                headers = rows.pop(0)
+                if current_row:
+                    matrix.append(current_row)
 
-            if headers or rows:
+            # 清理过期的 rowspan
+            rowspan_tracker = {k: v for k, v in rowspan_tracker.items() if v[1] > 0}
+
+            if matrix:
+                # 确定最大列数
+                max_cols = max(len(row) for row in matrix) if matrix else 0
+
+                # 规范化所有行长度
+                for row in matrix:
+                    while len(row) < max_cols:
+                        row.append('')
+
+                # 第一行作为表头
+                headers = matrix[0] if matrix else []
+                rows = matrix[1:] if len(matrix) > 1 else []
+
                 tables.append({
                     'headers': headers,
                     'rows': rows,
                     'line': line_num,
-                    'type': 'html'
+                    'type': 'html',
+                    'has_merged_cells': True  # 标记包含合并单元格
                 })
 
         return tables
+
+    def _parse_html_cells(self, row_content: str) -> list[tuple]:
+        """
+        解析 HTML 行中的单元格
+
+        Returns:
+            [(内容, colspan, rowspan), ...]
+        """
+        cells = []
+        # 匹配 td 或 th 及其属性
+        cell_pattern = r'<(t[dh])([^>]*)>(.*?)</\1>'
+        matches = re.findall(cell_pattern, row_content, re.DOTALL | re.IGNORECASE)
+
+        for tag, attrs, content in matches:
+            # 提取 colspan
+            colspan_match = re.search(r'colspan\s*=\s*["\']?(\d+)', attrs, re.IGNORECASE)
+            colspan = int(colspan_match.group(1)) if colspan_match else 1
+
+            # 提取 rowspan
+            rowspan_match = re.search(r'rowspan\s*=\s*["\']?(\d+)', attrs, re.IGNORECASE)
+            rowspan = int(rowspan_match.group(1)) if rowspan_match else 1
+
+            # 清理 HTML 标签
+            clean_text = re.sub(r'<[^>]+>', '', content)
+            clean_text = clean_text.strip().replace('\n', ' ')
+
+            cells.append((clean_text, colspan, rowspan))
+
+        return cells
 
     def _parse_table(self, start_index: int) -> dict:
         """解析单个表格"""
