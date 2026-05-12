@@ -229,19 +229,17 @@ class InfoExtractor:
                     failed.append(title)
                     continue
 
-            section_tokens = self.parser.count_tokens(content['content'])
+            # 先清理内容（转换表格、移除图片等）
+            cleaned_content = self.clean_content(content['content'])
+            cleaned_tokens = self.parser.count_tokens(cleaned_content)
 
-            # 检查内容是否太少（少于 50 tokens 可能只是标题）
-            min_content_tokens = 50
-            if section_tokens < min_content_tokens:
-                print(f"⚠ 内容太少 ({section_tokens} tokens)，跳过: {title}")
+            # 检查清理后的内容是否太少
+            min_content_tokens = 100
+            if cleaned_tokens < min_content_tokens:
+                print(f"⚠ 内容太少 (清理后 {cleaned_tokens} tokens)，跳过: {title}")
                 self.failed_sections.add(title)
                 skipped.append(title)
                 continue
-
-            # 清理内容（转换表格、移除图片等）
-            cleaned_content = self.clean_content(content['content'])
-            cleaned_tokens = self.parser.count_tokens(cleaned_content)
 
             if new_tokens + cleaned_tokens > budget:
                 print(f"⚠ Token 预算不足，跳过: {title}")
