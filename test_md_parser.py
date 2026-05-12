@@ -6,10 +6,12 @@ MDParser 测试脚本
 import os
 from md_parser import MDParser
 
+# 目录配置
+OUTPUT_DIR = 'output'
 # 主力测试文件
-MAIN_TEST_FILE = 'MinerU_markdown_CMTRIR25_2053831170887077888.md'
+MAIN_TEST_FILE = f'{OUTPUT_DIR}/MinerU_markdown_CMTRIR25_2053831170887077888.md'
 # 备用测试文件（有表格和代码块）
-BACKUP_TEST_FILE = 'CLASSIC_TRADING_THEORIES.md'
+BACKUP_TEST_FILE = f'{OUTPUT_DIR}/CLASSIC_TRADING_THEORIES.md'
 
 
 def test_main_file():

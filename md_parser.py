@@ -675,7 +675,7 @@ class MDParser:
 
 if __name__ == '__main__':
     # 测试代码
-    parser = MDParser('CLASSIC_TRADING_THEORIES.md')
+    parser = MDParser('output/CLASSIC_TRADING_THEORIES.md')
 
     print("=" * 60)
     print("1. 标题层级树")
