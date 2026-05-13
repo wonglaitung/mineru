@@ -172,3 +172,37 @@ def chat_with_llm(query, enable_thinking=True):
     except Exception as error:
         log_message(f'Error during requests POST: {error}')
         raise error  # Re-raise the error for the caller to handle
+
+
+def expand_query_for_financial_analysis(query: str) -> list[str]:
+    """
+    使用 LLM 扩展财务分析查询
+
+    Args:
+        query: 用户原始查询
+
+    Returns:
+        扩展后的关键词列表（繁体中文）
+    """
+    prompt = f"""你是一个财务分析专家。用户想要查询：{query}
+
+请分析这个查询需要哪些财务报表数据？返回需要检索的关键词列表。
+
+要求：
+1. 返回繁体中文关键词
+2. 每个关键词用逗号分隔
+3. 只返回关键词，不要解释
+
+示例：
+查询：现金流分析
+返回：現金流量表,綜合損益表,經營活動現金流量,營業收入,淨利潤
+
+查询：{query}
+返回："""
+
+    response = chat_with_llm(prompt, enable_thinking=False)
+
+    # 解析关键词
+    keywords = [k.strip() for k in response.split(',') if k.strip()]
+    log_message(f"[INFO] expand_query_for_financial_analysis: '{query}' -> {keywords}")
+    return keywords

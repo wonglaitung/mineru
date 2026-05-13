@@ -427,20 +427,115 @@ class BM25Retriever:
 
         return results
 
+    def retrieve_with_expansion(
+        self,
+        query: str,
+        max_tokens: int = 12000,
+        top_k_per_keyword: int = 10
+    ) -> dict:
+        """
+        使用 LLM 扩展查询后检索
+
+        Args:
+            query: 用户原始查询
+            max_tokens: 最大 Token 数
+            top_k_per_keyword: 每个关键词检索的块数
+
+        Returns:
+            {
+                'context': 拼接后的上下文,
+                'tokens': 总 Token 数,
+                'chunks': 选中的块信息,
+                'expanded_keywords': 扩展的关键词,
+                'stats': 统计信息
+            }
+        """
+        from llm_services.qwen_engine import expand_query_for_financial_analysis
+
+        # 1. LLM 扩展查询
+        expanded_keywords = expand_query_for_financial_analysis(query)
+
+        print(f"\n扩展关键词: {expanded_keywords}")
+
+        # 2. 多关键词检索
+        all_results = []
+        for keyword in expanded_keywords:
+            results = self.retrieve(keyword, top_k=top_k_per_keyword)
+            all_results.extend(results)
+
+        # 3. 合并去重（按行号去重，保留最高分数）
+        merged = {}
+        for r in all_results:
+            line = r['metadata']['line']
+            if line not in merged or r['score'] > merged[line]['score']:
+                merged[line] = r
+
+        # 4. 按分数排序
+        sorted_results = sorted(merged.values(), key=lambda x: x['score'], reverse=True)
+
+        # 5. Token 预算控制
+        selected = []
+        total_tokens = 0
+
+        for chunk in sorted_results:
+            chunk_tokens = self._count_tokens(chunk['text'])
+            if total_tokens + chunk_tokens <= max_tokens:
+                selected.append(chunk)
+                total_tokens += chunk_tokens
+            else:
+                break
+
+        # 6. 按原始顺序重排
+        selected.sort(key=lambda x: x['metadata']['line'])
+
+        # 7. 拼接上下文
+        context_parts = []
+        for chunk in selected:
+            source = f"[来源: 行 {chunk['metadata']['line']}"
+            if chunk['metadata']['heading']:
+                source += f", 章节: {chunk['metadata']['heading']}"
+            source += "]"
+
+            context_parts.append(f"{source}\n{chunk['text']}")
+
+        context = '\n\n---\n\n'.join(context_parts)
+
+        return {
+            'context': context,
+            'tokens': total_tokens,
+            'chunks': selected,
+            'expanded_keywords': expanded_keywords,
+            'stats': {
+                'total_chunks': len(self.chunks),
+                'keywords_used': len(expanded_keywords),
+                'total_retrieved': len(all_results),
+                'merged_unique': len(merged),
+                'selected': len(selected),
+                'max_tokens': max_tokens
+            }
+        }
+
 
 def main():
     """命令行入口"""
     if len(sys.argv) < 3:
-        print("用法: python bm25_retriever.py <md_file> <query> [max_tokens]")
+        print("用法: python bm25_retriever.py <md_file> <query> [max_tokens] [--expand]")
         print("\n功能: 使用 BM25 从大型 MD 文件中检索相关内容")
+        print("\n参数:")
+        print("  --expand    启用 LLM 查询扩展（自动关联相关财务报表）")
         print("\n示例:")
         print("  python bm25_retriever.py output/MinerU_markdown_*.md '分析现金流状况'")
+        print("  python bm25_retriever.py output/MinerU_markdown_*.md '现金流分析' --expand")
         print("  python bm25_retriever.py output/MTR_note.md '现金流量表' 8000")
         sys.exit(1)
 
     filepath = sys.argv[1]
     query = sys.argv[2]
-    max_tokens = int(sys.argv[3]) if len(sys.argv) > 3 else 12000
+    use_llm_expansion = '--expand' in sys.argv
+
+    # 解析 max_tokens（跳过 --expand 参数）
+    args_without_expand = [a for a in sys.argv[3:] if a != '--expand']
+    max_tokens = int(args_without_expand[0]) if args_without_expand else 12000
 
     print("=" * 60)
     print("BM25 轻量检索")
@@ -448,6 +543,8 @@ def main():
     print(f"文件: {filepath}")
     print(f"问题: {query}")
     print(f"Token 限制: {max_tokens:,}")
+    if use_llm_expansion:
+        print("LLM 扩展: 启用")
 
     # 初始化检索器
     retriever = BM25Retriever(filepath)
@@ -465,9 +562,15 @@ def main():
     print("检索结果")
     print("=" * 60)
 
-    result = retriever.get_context(query, max_tokens=max_tokens)
+    if use_llm_expansion:
+        result = retriever.retrieve_with_expansion(query, max_tokens=max_tokens)
+        print(f"扩展关键词数: {result['stats']['keywords_used']}")
+        print(f"总检索块数: {result['stats']['total_retrieved']}")
+        print(f"合并后唯一块: {result['stats']['merged_unique']}")
+    else:
+        result = retriever.get_context(query, max_tokens=max_tokens)
 
-    print(f"选中块数: {result['stats']['selected']}/{result['stats']['retrieved']}")
+    print(f"选中块数: {result['stats']['selected']}")
     print(f"总 Token: {result['tokens']:,}")
 
     print("\n选中的块:")
