@@ -37,81 +37,8 @@ except ImportError:
         def to_traditional(text: str) -> str:
             return text  # 无转换库时保持原样
 
-
-def clean_content(content: str) -> str:
-    """
-    清理内容：转换表格、移除无效内容
-
-    Args:
-        content: 原始内容
-
-    Returns:
-        清理后的内容
-    """
-    # 1. 转换 HTML 表格为 CSV 格式
-    content = _convert_html_tables_to_csv(content)
-
-    # 2. 移除图片链接
-    content = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', content)
-
-    # 3. 移除多余的空行
-    content = re.sub(r'\n{3,}', '\n\n', content)
-
-    return content.strip()
-
-
-def _convert_html_tables_to_csv(content: str) -> str:
-    """
-    将 HTML 表格转换为 CSV 格式
-
-    Args:
-        content: 包含 HTML 表格的内容
-
-    Returns:
-        转换后的内容
-    """
-    def table_to_csv(table_html: str) -> str:
-        """将单个 HTML 表格转为 CSV"""
-        rows = []
-
-        # 提取所有行
-        row_pattern = r'<tr[^>]*>(.*?)</tr>'
-        row_matches = re.findall(row_pattern, table_html, re.DOTALL | re.IGNORECASE)
-
-        for row_content in row_matches:
-            # 提取单元格
-            cell_pattern = r'<t[dh][^>]*>(.*?)</t[dh]>'
-            cells = re.findall(cell_pattern, row_content, re.DOTALL | re.IGNORECASE)
-
-            # 清理单元格内容
-            clean_cells = []
-            for cell in cells:
-                # 移除 HTML 标签
-                clean_text = re.sub(r'<[^>]+>', '', cell)
-                # 清理空白
-                clean_text = clean_text.strip().replace('\n', ' ').replace('\t', ' ')
-                # 转义 CSV 特殊字符
-                if ',' in clean_text or '"' in clean_text or '\n' in clean_text:
-                    clean_text = '"' + clean_text.replace('"', '""') + '"'
-                clean_cells.append(clean_text)
-
-            if clean_cells:
-                rows.append(','.join(clean_cells))
-
-        return '\n'.join(rows)
-
-    # 查找并替换所有 HTML 表格
-    table_pattern = r'<table[^>]*>(.*?)</table>'
-
-    def replace_table(match):
-        table_html = match.group(0)
-        csv = table_to_csv(table_html)
-        if csv:
-            return '\n' + csv + '\n'
-        return ''
-
-    result = re.sub(table_pattern, replace_table, content, flags=re.DOTALL | re.IGNORECASE)
-    return result
+from common.text_utils import clean_content, count_tokens
+from common.table_utils import find_table_ranges
 
 
 class BM25Retriever:
@@ -149,90 +76,14 @@ class BM25Retriever:
             self.content = self.raw_content
         self.lines = self.content.split('\n')
 
-        # 识别内容中的表格位置（CSV 块或 HTML 表格）
-        self.table_ranges = self._find_table_ranges(self.content)
+        # 识别内容中的表格位置（使用公共组件）
+        self.table_ranges = find_table_ranges(self.content)
 
         # 切分文档（表格感知）
         self.chunks = self._split_document_table_aware()
 
         # 构建 BM25 索引
         self.bm25 = self._build_index()
-
-    def _find_table_ranges(self, content: str) -> list[tuple]:
-        """
-        找出所有表格的位置范围（支持 CSV 格式和 HTML 格式）
-
-        Returns:
-            [(start_pos, end_pos), ...] 表格在内容中的字符位置
-        """
-        ranges = []
-
-        # 匹配 CSV 格式表格（多行逗号分隔的内容）
-        # 特征：连续多行包含逗号，且每行逗号数量相近
-        lines = content.split('\n')
-        csv_start = None
-        csv_comma_count = 0
-
-        for i, line in enumerate(lines):
-            comma_count = line.count(',')
-
-            # 判断是否为 CSV 行（包含逗号且不是 URL 等）
-            is_csv_line = (
-                comma_count >= 2 and
-                not line.strip().startswith('http') and
-                len(line.strip()) > 10  # 排除太短的行
-            )
-
-            if is_csv_line:
-                if csv_start is None:
-                    csv_start = i
-                    csv_comma_count = comma_count
-                # 允许逗号数量有轻微变化（处理表头等）
-                elif abs(comma_count - csv_comma_count) > 2:
-                    # CSV 块结束
-                    end_pos = content.find('\n', sum(len(l) + 1 for l in lines[:i]))
-                    start_pos = sum(len(l) + 1 for l in lines[:csv_start])
-                    if end_pos - start_pos > 50:  # 最小表格大小
-                        ranges.append((start_pos, end_pos))
-                    csv_start = i
-                    csv_comma_count = comma_count
-            else:
-                if csv_start is not None:
-                    # CSV 块结束
-                    end_pos = content.find('\n', sum(len(l) + 1 for l in lines[:i]))
-                    start_pos = sum(len(l) + 1 for l in lines[:csv_start])
-                    if end_pos - start_pos > 50:
-                        ranges.append((start_pos, end_pos))
-                    csv_start = None
-
-        # 处理末尾的 CSV 块
-        if csv_start is not None:
-            start_pos = sum(len(l) + 1 for l in lines[:csv_start])
-            ranges.append((start_pos, len(content)))
-
-        # 匹配 HTML 表格
-        pattern = r'<table[^>]*>.*?</table>'
-        for match in re.finditer(pattern, content, re.DOTALL | re.IGNORECASE):
-            ranges.append((match.start(), match.end()))
-
-        # 匹配 Markdown 表格
-        md_table_pattern = r'(\|[^\n]+\|\n)+(\|[-:| ]+\|\n)(\|[^\n]+\|\n?)+'
-        for match in re.finditer(md_table_pattern, content):
-            ranges.append((match.start(), match.end()))
-
-        # 合并重叠的范围并排序
-        if not ranges:
-            return []
-
-        ranges = sorted(ranges, key=lambda x: x[0])
-        merged = [ranges[0]]
-        for start, end in ranges[1:]:
-            if start <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-            else:
-                merged.append((start, end))
-
-        return merged
 
     def _is_in_table(self, pos: int) -> bool:
         """检查位置是否在表格内"""
@@ -506,16 +357,8 @@ class BM25Retriever:
         }
 
     def _count_tokens(self, text: str, model: str = "cl100k_base") -> int:
-        """计算文本的 Token 数量"""
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding(model)
-            return len(enc.encode(text))
-        except ImportError:
-            # 估算：中文约 1.5 token/字，英文约 0.25 token/字符
-            chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-            other_chars = len(text) - chinese_chars
-            return int(chinese_chars * 1.5 + other_chars * 0.25)
+        """计算文本的 Token 数量（使用公共组件）"""
+        return count_tokens(text, model)
 
     def get_stats(self) -> dict:
         """返回索引统计信息"""

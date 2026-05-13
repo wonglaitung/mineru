@@ -8,6 +8,9 @@ from typing import Optional
 from markdown_it import MarkdownIt
 from mdit_py_plugins.gfm import gfm_plugin
 
+from common.table_utils import parse_html_table
+from common.text_utils import count_tokens
+
 
 class MDParser:
     """Markdown 文档解析器"""
@@ -94,113 +97,14 @@ class MDParser:
         matches = re.finditer(pattern, self.content, re.DOTALL | re.IGNORECASE)
 
         for match in matches:
-            table_html = match.group(1)
+            table_html = match.group(0)
             line_num = self.content[:match.start()].count('\n') + 1
 
-            # 提取所有行
-            row_pattern = r'<tr[^>]*>(.*?)</tr>'
-            row_matches = re.findall(row_pattern, table_html, re.DOTALL | re.IGNORECASE)
-
-            # 解析带合并单元格的表格
-            matrix = []  # 二维矩阵存储所有单元格
-            rowspan_tracker = {}  # 记录跨行单元格: {col_index: (content, remaining_rows)}
-
-            for row_content in row_matches:
-                # 解析单元格及其属性
-                cells_data = self._parse_html_cells(row_content)
-
-                if not cells_data:
-                    continue
-
-                # 构建当前行（处理 rowspan 占位）
-                current_row = []
-                col_index = 0
-                cell_idx = 0
-
-                while col_index < len(cells_data) + len(rowspan_tracker):
-                    # 检查是否有 rowspan 占位
-                    if col_index in rowspan_tracker:
-                        content, remaining = rowspan_tracker[col_index]
-                        current_row.append(content)
-                        if remaining > 1:
-                            rowspan_tracker[col_index] = (content, remaining - 1)
-                        else:
-                            del rowspan_tracker[col_index]
-                        col_index += 1
-                    elif cell_idx < len(cells_data):
-                        cell_content, colspan, rowspan = cells_data[cell_idx]
-
-                        # 处理 colspan：重复内容
-                        for _ in range(colspan):
-                            current_row.append(cell_content)
-
-                        # 处理 rowspan：记录跨行
-                        if rowspan > 1:
-                            for offset in range(colspan):
-                                rowspan_tracker[col_index + offset] = (cell_content, rowspan - 1)
-
-                        col_index += colspan
-                        cell_idx += 1
-                    else:
-                        break
-
-                if current_row:
-                    matrix.append(current_row)
-
-            # 清理过期的 rowspan
-            rowspan_tracker = {k: v for k, v in rowspan_tracker.items() if v[1] > 0}
-
-            if matrix:
-                # 确定最大列数
-                max_cols = max(len(row) for row in matrix) if matrix else 0
-
-                # 规范化所有行长度
-                for row in matrix:
-                    while len(row) < max_cols:
-                        row.append('')
-
-                # 第一行作为表头
-                headers = matrix[0] if matrix else []
-                rows = matrix[1:] if len(matrix) > 1 else []
-
-                tables.append({
-                    'headers': headers,
-                    'rows': rows,
-                    'line': line_num,
-                    'type': 'html',
-                    'has_merged_cells': True  # 标记包含合并单元格
-                })
+            # 使用公共组件解析
+            table_data = parse_html_table(table_html, line_num)
+            tables.append(table_data)
 
         return tables
-
-    def _parse_html_cells(self, row_content: str) -> list[tuple]:
-        """
-        解析 HTML 行中的单元格
-
-        Returns:
-            [(内容, colspan, rowspan), ...]
-        """
-        cells = []
-        # 匹配 td 或 th 及其属性
-        cell_pattern = r'<(t[dh])([^>]*)>(.*?)</\1>'
-        matches = re.findall(cell_pattern, row_content, re.DOTALL | re.IGNORECASE)
-
-        for tag, attrs, content in matches:
-            # 提取 colspan
-            colspan_match = re.search(r'colspan\s*=\s*["\']?(\d+)', attrs, re.IGNORECASE)
-            colspan = int(colspan_match.group(1)) if colspan_match else 1
-
-            # 提取 rowspan
-            rowspan_match = re.search(r'rowspan\s*=\s*["\']?(\d+)', attrs, re.IGNORECASE)
-            rowspan = int(rowspan_match.group(1)) if rowspan_match else 1
-
-            # 清理 HTML 标签
-            clean_text = re.sub(r'<[^>]+>', '', content)
-            clean_text = clean_text.strip().replace('\n', ' ')
-
-            cells.append((clean_text, colspan, rowspan))
-
-        return cells
 
     def _parse_table(self, start_index: int) -> dict:
         """解析单个表格"""
@@ -548,28 +452,16 @@ class MDParser:
 
     def count_tokens(self, text: str, model: str = "cl100k_base") -> int:
         """
-        计算文本的大模型 Token 数量
+        计算文本的大模型 Token 数量（使用公共组件）
 
         Args:
             text: 要计算的文本
             model: 编码模型名称
-                - "cl100k_base": GPT-4, GPT-3.5-turbo, text-embedding-ada-002
-                - "o200k_base": GPT-4o, GPT-4o-mini
-                - "p50k_base": Codex 模型
 
         Returns:
             Token 数量
         """
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding(model)
-            return len(enc.encode(text))
-        except ImportError:
-            # tiktoken 未安装，使用估算
-            # 中文约 1.5 token/字，英文约 0.25 token/字符
-            chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-            other_chars = len(text) - chinese_chars
-            return int(chinese_chars * 1.5 + other_chars * 0.25)
+        return count_tokens(text, model)
 
     def get_token_stats(self, model: str = "cl100k_base") -> dict:
         """

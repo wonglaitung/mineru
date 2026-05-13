@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'llm_services'))
 
 from md_parser import MDParser
 from llm_services.qwen_engine import chat_with_llm
+from common.text_utils import clean_content
 
 
 class InfoExtractor:
@@ -37,78 +38,8 @@ class InfoExtractor:
         self.total_tokens_used = 0    # 累计使用的 Token
 
     def clean_content(self, content: str) -> str:
-        """
-        清理内容：转换表格、移除无效内容
-
-        Args:
-            content: 原始内容
-
-        Returns:
-            清理后的内容
-        """
-        # 1. 转换 HTML 表格为 CSV 格式
-        content = self._convert_html_tables_to_csv(content)
-
-        # 2. 移除图片链接
-        content = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', content)
-
-        # 3. 移除多余的空行
-        content = re.sub(r'\n{3,}', '\n\n', content)
-
-        return content.strip()
-
-    def _convert_html_tables_to_csv(self, content: str) -> str:
-        """
-        将 HTML 表格转换为 CSV 格式
-
-        Args:
-            content: 包含 HTML 表格的内容
-
-        Returns:
-            转换后的内容
-        """
-        def table_to_csv(table_html: str) -> str:
-            """将单个 HTML 表格转为 CSV"""
-            rows = []
-
-            # 提取所有行
-            row_pattern = r'<tr[^>]*>(.*?)</tr>'
-            row_matches = re.findall(row_pattern, table_html, re.DOTALL | re.IGNORECASE)
-
-            for row_content in row_matches:
-                # 提取单元格
-                cell_pattern = r'<t[dh][^>]*>(.*?)</t[dh]>'
-                cells = re.findall(cell_pattern, row_content, re.DOTALL | re.IGNORECASE)
-
-                # 清理单元格内容
-                clean_cells = []
-                for cell in cells:
-                    # 移除 HTML 标签
-                    clean_text = re.sub(r'<[^>]+>', '', cell)
-                    # 清理空白
-                    clean_text = clean_text.strip().replace('\n', ' ').replace('\t', ' ')
-                    # 转义 CSV 特殊字符
-                    if ',' in clean_text or '"' in clean_text or '\n' in clean_text:
-                        clean_text = '"' + clean_text.replace('"', '""') + '"'
-                    clean_cells.append(clean_text)
-
-                if clean_cells:
-                    rows.append(','.join(clean_cells))
-
-            return '\n'.join(rows)
-
-        # 查找并替换所有 HTML 表格
-        table_pattern = r'<table[^>]*>(.*?)</table>'
-
-        def replace_table(match):
-            table_html = match.group(0)
-            csv = table_to_csv(table_html)
-            if csv:
-                return '\n' + csv + '\n'
-            return ''
-
-        result = re.sub(table_pattern, replace_table, content, flags=re.DOTALL | re.IGNORECASE)
-        return result
+        """清理内容（使用公共组件）"""
+        return clean_content(content)
 
     def get_toc(self) -> dict:
         """
@@ -241,6 +172,14 @@ class InfoExtractor:
                 skipped.append(title)
                 continue
 
+            # 让大模型判断内容是否相关
+            is_relevant = self.is_content_relevant(title, cleaned_content, self._current_question)
+            if not is_relevant:
+                print(f"⚠ 大模型判断不相关，跳过: {title}")
+                self.failed_sections.add(title)
+                skipped.append(title)
+                continue
+
             if new_tokens + cleaned_tokens > budget:
                 print(f"⚠ Token 预算不足，跳过: {title}")
                 continue
@@ -261,6 +200,45 @@ class InfoExtractor:
             'skipped': skipped,
             'all_extracted': list(self.extracted_sections.keys())
         }
+
+    def is_content_relevant(self, title: str, content: str, question: str) -> bool:
+        """
+        让大模型判断内容是否与问题相关
+
+        Args:
+            title: 章节标题
+            content: 章节内容
+            question: 用户问题
+
+        Returns:
+            True 如果相关，False 如果不相关
+        """
+        prompt = f"""判断以下章节内容是否与用户问题相关。
+
+用户问题: {question}
+
+章节标题: {title}
+
+章节内容:
+{content[:2000]}{'...' if len(content) > 2000 else ''}
+
+【输出要求】
+只输出 JSON: {{"relevant": true}} 或 {{"relevant": false}}
+"""
+
+        response = chat_with_llm(prompt, enable_thinking=False)
+
+        try:
+            if '{' in response:
+                start = response.index('{')
+                end = response.rindex('}') + 1
+                result = json.loads(response[start:end])
+                return result.get('relevant', False)
+        except:
+            pass
+
+        # 解析失败时默认保留
+        return True
 
     def get_all_extracted_content(self) -> str:
         """获取所有已提取的内容"""
@@ -284,6 +262,9 @@ class InfoExtractor:
                 'sections': 抽取的章节列表
             }
         """
+        # 保存当前问题，供 extract_sections 使用
+        self._current_question = question
+
         toc = self.get_toc()
 
         if verbose:

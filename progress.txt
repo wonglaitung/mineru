@@ -1,0 +1,17 @@
+# 项目进展记录
+
+## 2026-05-13
+
+### 当前状态
+- 项目初始化完成
+- 核心模块已实现：md_parser.py, smart_analyzer.py, bm25_retriever.py
+- LLM 服务封装：llm_services/qwen_engine.py
+
+### 待办事项
+- [ ] 完善 progress.txt 和 lessons.md 文件
+- [ ] 测试各模块功能
+
+### 最近提交
+- 178ed3b Add BM25 retriever for lightweight document retrieval
+- ca45b41 Add test files
+- d273901 Add CLAUDE.md and update smart_analyzer.py
