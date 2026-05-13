@@ -6,6 +6,7 @@ BM25 轻量检索器
 - 无需向量数据库，纯文本检索
 """
 
+import os
 import re
 import sys
 from typing import Optional
@@ -22,27 +23,46 @@ except ImportError:
     print("请安装: pip install langchain-text-splitters")
     sys.exit(1)
 
-# 简繁转换
+# jieba 分词
 try:
-    import opencc
-    _converter = opencc.OpenCC('s2t.json')  # 简体转繁体
-    def to_traditional(text: str) -> str:
-        return _converter.convert(text)
+    import jieba
 except ImportError:
-    try:
-        import zhconv
-        def to_traditional(text: str) -> str:
-            return zhconv.convert(text, 'zh-hant')
-    except ImportError:
-        def to_traditional(text: str) -> str:
-            return text  # 无转换库时保持原样
+    print("请安装: pip install jieba")
+    sys.exit(1)
 
-from common.text_utils import clean_content, count_tokens
+from common.text_utils import clean_content, count_tokens, to_traditional
 from common.table_utils import find_table_ranges
 
 
 class BM25Retriever:
     """BM25 轻量检索器 - 无需向量数据库"""
+
+    # 类级别词典加载标记
+    _dict_loaded = False
+
+    @classmethod
+    def _load_finance_dict(cls):
+        """加载财务领域词典（只加载一次），转换为繁体中文"""
+        if cls._dict_loaded:
+            return
+        dict_path = os.path.join(
+            os.path.dirname(__file__), 'common', 'finance_dict.txt'
+        )
+        if os.path.exists(dict_path):
+            # 读取词典并转换为繁体
+            with open(dict_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    word = to_traditional(parts[0])  # 转换为繁体
+                    freq = parts[1] if len(parts) > 1 else '5'
+                    tag = parts[2] if len(parts) > 2 else 'n'
+                    jieba.add_word(word, int(freq), tag)
+        cls._dict_loaded = True
 
     def __init__(
         self,
@@ -64,6 +84,12 @@ class BM25Retriever:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.clean_content_flag = clean_content_flag
+
+        # 加载财务词典
+        self._load_finance_dict()
+
+        # 加载同义词映射
+        self.synonym_map = self._load_synonyms()
 
         with open(filepath, 'r', encoding='utf-8') as f:
             self.raw_content = f.read()
@@ -204,55 +230,54 @@ class BM25Retriever:
 
         return chunks
 
-    def _tokenize(self, text: str) -> list[str]:
+    def _load_synonyms(self) -> dict:
+        """加载同义词映射"""
+        synonym_map = {}
+        synonym_path = os.path.join(
+            os.path.dirname(__file__), 'common', 'synonyms.txt'
+        )
+        if os.path.exists(synonym_path):
+            with open(synonym_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if '=' in line:
+                        key, values = line.split('=', 1)
+                        key_trad = to_traditional(key.strip())
+                        values_trad = [to_traditional(v.strip()) for v in values.split(',')]
+                        synonym_map[key_trad] = values_trad
+        return synonym_map
+
+    def _tokenize(self, text: str, expand_synonyms: bool = False) -> list[str]:
         """
-        中文分词：字符 + 二元语法（bigram）+ 英文单词
+        使用 jieba 进行中文分词
 
         Args:
             text: 输入文本
+            expand_synonyms: 是否扩展同义词（用于查询）
 
         Returns:
             token 列表
         """
-        tokens = []
-        word = ""
-        chinese_chars = []
+        # 简繁转换（文档是繁体）
+        text = to_traditional(text)
 
-        for char in text:
-            # 中文字符
-            if '\u4e00' <= char <= '\u9fff':
-                if word:
-                    tokens.append(word.lower())
-                    word = ""
-                chinese_chars.append(char)
-            # 英文/数字累积成词
-            elif char.isalnum():
-                if chinese_chars:
-                    # 处理累积的中文
-                    tokens.extend(chinese_chars)  # 单字符
-                    # 添加二元语法
-                    for i in range(len(chinese_chars) - 1):
-                        tokens.append(''.join(chinese_chars[i:i+2]))
-                    chinese_chars = []
-                word += char
-            # 其他字符作为分隔
-            else:
-                if word:
-                    tokens.append(word.lower())
-                    word = ""
-                if chinese_chars:
-                    tokens.extend(chinese_chars)
-                    for i in range(len(chinese_chars) - 1):
-                        tokens.append(''.join(chinese_chars[i:i+2]))
-                    chinese_chars = []
+        # jieba 分词
+        tokens = list(jieba.cut(text))
 
-        # 处理末尾
-        if word:
-            tokens.append(word.lower())
-        if chinese_chars:
-            tokens.extend(chinese_chars)
-            for i in range(len(chinese_chars) - 1):
-                tokens.append(''.join(chinese_chars[i:i+2]))
+        # 过滤空白和单字符标点
+        tokens = [t.strip() for t in tokens if t.strip() and len(t.strip()) > 0]
+
+        # 同义词扩展（仅用于查询）
+        if expand_synonyms:
+            expanded = []
+            for t in tokens:
+                expanded.append(t)
+                # 添加同义词
+                if t in self.synonym_map:
+                    expanded.extend(self.synonym_map[t])
+            tokens = expanded
 
         return tokens
 
@@ -272,9 +297,8 @@ class BM25Retriever:
         Returns:
             [{'text': '...', 'score': 0.85, 'metadata': {...}}, ...]
         """
-        # 转换为繁体中文（文档是繁体）
-        query_traditional = to_traditional(query)
-        tokenized_query = self._tokenize(query_traditional)
+        # 分词（内部已包含简繁转换），启用同义词扩展
+        tokenized_query = self._tokenize(query, expand_synonyms=True)
         scores = self.bm25.get_scores(tokenized_query)
 
         # 获取 top_k 索引

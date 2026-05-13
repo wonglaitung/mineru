@@ -1,6 +1,16 @@
+# Markdown 解析
 markdown-it-py>=4.1.0
 mdit-py-plugins>=0.4.0
+
+# Token 计算
 tiktoken>=0.5.0
+
+# BM25 检索
 rank_bm25>=0.2.2
 langchain-text-splitters>=0.2.0
+
+# 中文分词
+jieba>=0.42.1
+
+# 简繁转换
 opencc>=1.1.0

@@ -2,7 +2,7 @@
 公共组件包
 """
 
-from .text_utils import clean_content, count_tokens
+from .text_utils import clean_content, count_tokens, to_traditional, to_simplified
 from .table_utils import (
     parse_html_cells,
     expand_html_table_to_matrix,
@@ -15,6 +15,8 @@ from .table_utils import (
 __all__ = [
     'clean_content',
     'count_tokens',
+    'to_traditional',
+    'to_simplified',
     'parse_html_cells',
     'expand_html_table_to_matrix',
     'html_table_to_csv',

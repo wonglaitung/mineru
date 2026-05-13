@@ -2,10 +2,81 @@
 文本处理公共组件
 - 内容清理
 - Token 计算
+- 简繁转换
 """
 
 import re
 
+
+# ==================== 简繁转换 ====================
+
+# 全局转换器（延迟初始化）
+_converter = None
+
+
+def _get_converter():
+    """获取简繁转换器（延迟初始化）"""
+    global _converter
+    if _converter is not None:
+        return _converter
+
+    try:
+        import opencc
+        _converter = opencc.OpenCC('s2t.json')  # 简体转繁体
+    except ImportError:
+        try:
+            import zhconv
+            # 使用 zhconv 模拟 opencc 接口
+            class ZhconvConverter:
+                def convert(self, text):
+                    return zhconv.convert(text, 'zh-hant')
+            _converter = ZhconvConverter()
+        except ImportError:
+            # 无转换库时返回原文本
+            class NoopConverter:
+                def convert(self, text):
+                    return text
+            _converter = NoopConverter()
+
+    return _converter
+
+
+def to_traditional(text: str) -> str:
+    """
+    将简体中文转换为繁体中文
+
+    Args:
+        text: 输入文本（简体或繁体）
+
+    Returns:
+        繁体中文文本
+    """
+    return _get_converter().convert(text)
+
+
+def to_simplified(text: str) -> str:
+    """
+    将繁体中文转换为简体中文
+
+    Args:
+        text: 输入文本（简体或繁体）
+
+    Returns:
+        简体中文文本
+    """
+    try:
+        import opencc
+        converter = opencc.OpenCC('t2s.json')  # 繁体转简体
+        return converter.convert(text)
+    except ImportError:
+        try:
+            import zhconv
+            return zhconv.convert(text, 'zh-cn')
+        except ImportError:
+            return text  # 无转换库时保持原样
+
+
+# ==================== 内容清理 ====================
 
 def clean_content(content: str) -> str:
     """
@@ -30,6 +101,8 @@ def clean_content(content: str) -> str:
 
     return content.strip()
 
+
+# ==================== Token 计算 ====================
 
 def count_tokens(text: str, model: str = "cl100k_base") -> int:
     """

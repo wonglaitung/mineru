@@ -35,7 +35,16 @@ pip install -r requirements.txt
 无需向量数据库的纯文本检索：
 - 文档切分（表格感知，不切断表格）
 - BM25 相似度计算
+- jieba 中文分词 + 财务领域词典
 - 简繁转换支持（opencc/zhconv）
+- 同义词扩展查询
+
+### common/ - 公共组件
+
+- `text_utils.py` - 文本清理、Token 计算、简繁转换
+- `table_utils.py` - HTML 表格解析（支持合并单元格）、CSV 转换
+- `finance_dict.txt` - 财务领域词典（简体中文，加载时转繁体）
+- `synonyms.txt` - 同义词映射（用于查询扩展）
 
 ### llm_services/qwen_engine.py - LLM API 封装
 
@@ -57,6 +66,19 @@ source set_key.sh && python smart_analyzer.py <md_file> <问题> [max_tokens]
 python bm25_retriever.py <md_file> <query> [max_tokens]
 ```
 
+## 简繁体处理流程
+
+所有文本统一转换为繁体中文进行索引和匹配：
+
+```
+文档(繁体) → to_traditional() → jieba分词 → BM25索引
+词典(简体) → to_traditional() → 加入jieba
+同义词(简体) → to_traditional() → 查询扩展
+用户查询 → to_traditional() → jieba分词 → BM25匹配
+```
+
+词典和同义词文件用简体中文编写便于维护，加载时自动转换为繁体。
+
 ## 内容清理
 
 `clean_content()` 方法处理：
@@ -73,10 +95,7 @@ python bm25_retriever.py <md_file> <query> [max_tokens]
 | `max_rounds` | 3 | 最大交互轮数 |
 | `chunk_size` | 500 | BM25 块大小（字符数） |
 
-## 会话工作流
-
-- 会话开始时：读取 `progress.txt` 了解项目进展，审查 `lessons.md` 检查错误
-- 功能更新后：更新 `progress.txt` 记录进展，如有新学习心得更新 `lessons.md`
+## 开发规范
 
 > **⚠️ 经验教训**：关键警告和最佳实践请参阅 [lessons.md](lessons.md)
 > **🔧 编程规范**：开发流程、系统设计决策请遵守 [docs/programmer_skill.md](docs/programmer_skill.md)
