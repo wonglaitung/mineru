@@ -203,6 +203,9 @@ def expand_query_for_financial_analysis(query: str) -> list[str]:
 
     response = chat_with_llm(prompt, enable_thinking=False)
 
+    # 打印 LLM 返回的原始结果
+    print(f"\n[LLM 返回关键词]: {response}")
+
     # 解析关键词
     keywords = [k.strip() for k in response.split(',') if k.strip()]
     log_message(f"[INFO] expand_query_for_financial_analysis: '{query}' -> {keywords}")
