@@ -450,10 +450,14 @@ class BM25Retriever:
                 'stats': 统计信息
             }
         """
-        from llm_services.qwen_engine import expand_query_for_financial_analysis
+        from llm_services.qwen_engine import expand_query_for_financial_analysis, log_message
 
         # 1. LLM 扩展查询
         expanded_keywords = expand_query_for_financial_analysis(query)
+
+        # 记录到日志文件
+        log_message(f"[LLM 查询扩展] 原始查询: {query}")
+        log_message(f"[LLM 查询扩展] 扩展关键词: {expanded_keywords}")
 
         print(f"\n扩展关键词: {expanded_keywords}")
 
