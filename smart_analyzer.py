@@ -458,7 +458,7 @@ def main():
         print("\n功能: 根据问题从大型 MD 文件中智能抽取相关章节")
         print("\n示例:")
         print("  python smart_analyzer.py output/MinerU_markdown_*.md '分析现金流状况'")
-        print("  python smart_analyzer.py output/MTR_note.md 'What is the cash flow trend?' 30000")
+        print("  python smart_analyzer.py output/report.md 'What is the cash flow trend?' 30000")
         sys.exit(1)
 
     filepath = sys.argv[1]

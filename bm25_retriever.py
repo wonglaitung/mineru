@@ -526,7 +526,7 @@ def main():
         print("\n示例:")
         print("  python bm25_retriever.py output/MinerU_markdown_*.md '分析现金流状况'")
         print("  python bm25_retriever.py output/MinerU_markdown_*.md '现金流分析' --expand")
-        print("  python bm25_retriever.py output/MTR_note.md '现金流量表' 8000")
+        print("  python bm25_retriever.py output/report.md '现金流量表' 8000")
         sys.exit(1)
 
     filepath = sys.argv[1]

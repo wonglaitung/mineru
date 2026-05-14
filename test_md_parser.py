@@ -1,6 +1,5 @@
 """
 MDParser 测试脚本
-主力测试文件: MinerU_markdown_CMTRIR25_2053831170887077888.md
 """
 
 import os
@@ -8,8 +7,10 @@ from md_parser import MDParser
 
 # 目录配置
 OUTPUT_DIR = 'output'
-# 主力测试文件
-MAIN_TEST_FILE = f'{OUTPUT_DIR}/MinerU_markdown_CMTRIR25_2053831170887077888.md'
+# 测试文件（使用第一个找到的 MD 文件）
+import glob
+md_files = glob.glob(f'{OUTPUT_DIR}/MinerU_markdown_*.md')
+MAIN_TEST_FILE = md_files[0] if md_files else f'{OUTPUT_DIR}/report.md'
 # 备用测试文件（有表格和代码块）
 BACKUP_TEST_FILE = f'{OUTPUT_DIR}/CLASSIC_TRADING_THEORIES.md'
 
