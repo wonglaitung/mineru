@@ -33,6 +33,10 @@ from loguru import logger
 
 from base64 import b64decode, b64encode
 
+# Add project path for financial retriever
+sys.path.insert(0, '/app')
+from financial_retriever import FinancialRetriever
+
 from mineru.cli.common import (
     aio_do_parse,
     do_parse,
@@ -1749,6 +1753,75 @@ async def health_check():
         "task_retention_seconds": task_manager.task_retention_seconds,
         "task_cleanup_interval_seconds": task_manager.task_cleanup_interval_seconds,
     }
+
+
+@app.post(
+    path="/fin-rag",
+    status_code=200,
+    summary="Retrieve relevant sections from Markdown document",
+    description=(
+        "Upload a Markdown file and query to retrieve relevant sections "
+        "using BM25 + LLM query expansion + Parent-Child strategy. "
+        "Designed for financial report analysis."
+    ),
+)
+async def retrieve_from_markdown(
+    file: Annotated[UploadFile, File(description="Markdown file (.md)")],
+    query: Annotated[str, Form(description="Query string, e.g., '现金流分析'")],
+    max_tokens: Annotated[int, Form(description="Maximum tokens to return")] = 12000,
+):
+    """
+    Financial report retrieval endpoint.
+
+    Uses BM25 + LLM query expansion to extract relevant sections from large Markdown documents.
+    """
+    # 1. Validate file type
+    if not file.filename or not file.filename.lower().endswith('.md'):
+        raise HTTPException(status_code=400, detail="Only .md files are supported")
+
+    # 2. Save uploaded file to temporary directory
+    temp_dir = tempfile.mkdtemp(prefix="fin_rag_")
+    temp_file = os.path.join(temp_dir, file.filename)
+
+    try:
+        # Write file content
+        content = await file.read()
+        with open(temp_file, "wb") as f:
+            f.write(content)
+
+        # 3. Initialize retriever and execute retrieval
+        retriever = FinancialRetriever(temp_file)
+        result = retriever.retrieve_with_expansion(query, max_tokens=max_tokens)
+
+        # 4. Return result
+        return JSONResponse(
+            status_code=200,
+            content={
+                "context": result["context"],
+                "tokens": result["tokens"],
+                "expanded_keywords": result["expanded_keywords"],
+                "stats": result["stats"],
+                "chunks": [
+                    {
+                        "text": chunk["text"],
+                        "score": chunk["score"],
+                        "metadata": chunk["metadata"]
+                    }
+                    for chunk in result["chunks"]
+                ]
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Financial retrieval failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+    finally:
+        # 5. Cleanup temporary files
+        cleanup_file(temp_dir)
 
 
 @click.command(
