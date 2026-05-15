@@ -18,6 +18,22 @@ RUN apt-get update && \
 RUN python3 -m pip install -U 'mineru[core]>=3.0.0' -i https://mirrors.aliyun.com/pypi/simple --break-system-packages && \
     python3 -m pip cache purge
 
+# Set working directory
+WORKDIR /app
+
+# Copy and install project dependencies
+COPY requirements.txt .
+RUN python3 -m pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple --break-system-packages && \
+    python3 -m pip cache purge
+
+# Copy project source code
+COPY bm25_retriever.py financial_retriever.py smart_analyzer.py md_parser.py ./
+COPY common/ ./common/
+COPY llm_services/ ./llm_services/
+
+# Copy customized fast_api.py to mineru CLI directory
+COPY fast_api.py /usr/local/lib/python3.12/dist-packages/mineru/cli/fast_api.py
+
 # Download models and update the configuration file
 RUN /bin/bash -c "mineru-models-download -s modelscope -m all"
 
