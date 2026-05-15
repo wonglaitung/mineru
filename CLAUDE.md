@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **⚠️ 经验教训**：关键警告和最佳实践请参阅 [lessons.md](lessons.md)
+> **🔧 编程规范**：开发流程、系统设计决策请遵守 [docs/programmer_skill.md](docs/programmer_skill.md)
+> **📐 技术决策**：架构设计决策请参阅 [docs/architecture_decisions.md](docs/architecture_decisions.md)
+
 ## 项目概述
 
 智能信息抽取工具，用于从大型 Markdown 文档中抽取相关章节。主要解决 64K 上下文限制问题，通过 LLM 智能选择章节并控制 Token 数量。
@@ -130,9 +134,3 @@ TABLE_SCORE_MULTIPLIER = 2.0        # 表格分数权重
 - HTML 表格 → CSV 格式（节省 Token）
 - 移除图片链接
 - 移除多余空行
-
-## 开发规范
-
-> **⚠️ 经验教训**：关键警告和最佳实践请参阅 [lessons.md](lessons.md)
-> **🔧 编程规范**：开发流程、系统设计决策请遵守 [docs/programmer_skill.md](docs/programmer_skill.md)
-> **📐 技术决策**：架构设计决策请参阅 [docs/architecture_decisions.md](docs/architecture_decisions.md)
