@@ -229,17 +229,21 @@ def find_table_ranges(content: str) -> list[tuple[int, int]]:
     for i, line in enumerate(lines):
         comma_count = line.count(',')
 
+        # CSV 行条件：至少 2 个逗号，不是 URL，长度足够或有多个逗号
+        # 放宽长度限制：财务报表中有些行很短但确实是表格的一部分
         is_csv_line = (
             comma_count >= 2 and
             not line.strip().startswith('http') and
-            len(line.strip()) > 10
+            (len(line.strip()) > 5 or comma_count >= 3)  # 短行但有多于3个逗号也认为是表格
         )
 
         if is_csv_line:
             if csv_start is None:
                 csv_start = i
                 csv_comma_count = comma_count
-            elif abs(comma_count - csv_comma_count) > 2:
+            # 放宽容忍度：逗号数量差异超过 5 才认为表格结束
+            # 财务报表表格常有空单元格，导致逗号数量变化
+            elif abs(comma_count - csv_comma_count) > 5:
                 # CSV 块结束
                 end_pos = content.find('\n', sum(len(l) + 1 for l in lines[:i]))
                 start_pos = sum(len(l) + 1 for l in lines[:csv_start])
