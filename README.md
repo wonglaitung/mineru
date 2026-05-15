@@ -159,6 +159,7 @@ fin-rag/
 
 ## 文档
 
+- [检索流程详解](docs/retrieval_flow.md) - 完整检索流程图解
 - [经验教训](lessons.md) - 开发过程中遇到的问题和解决方案
 - [技术决策记录](docs/architecture_decisions.md) - Rerank、摘要分块等技术分析
 - [编程规范](docs/programmer_skill.md) - 开发流程和代码质量要求
