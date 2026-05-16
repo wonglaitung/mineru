@@ -17,7 +17,7 @@ HOST_PORT="${HOST_PORT:-8000}"
 # 检查镜像是否存在
 if ! docker image inspect $IMAGE_NAME &>/dev/null; then
     echo "错误: 镜像 $IMAGE_NAME 不存在"
-    echo "请先构建镜像: docker build -t $IMAGE_NAME ."
+    echo "请先构建镜像: docker build -t $IMAGE_NAME -f docker/Dockerfile ."
     exit 1
 fi
 

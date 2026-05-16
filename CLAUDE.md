@@ -32,8 +32,8 @@ python test_md_parser.py
 rm -f /tmp/jieba.cache
 
 # Docker 部署
-docker build -t fin-rag .
-./start_fin_rag.sh
+docker build -t fin-rag -f docker/Dockerfile .
+./docker/start_fin_rag.sh
 ```
 
 ## 架构
