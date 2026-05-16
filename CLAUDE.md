@@ -43,8 +43,8 @@ docker build -t fin-rag .
 | 模块 | 职责 | 关键点 |
 |------|------|--------|
 | `bm25_retriever.py` | 通用 BM25 检索器 | 表格感知分块、jieba 分词、Parent-Child 策略。类常量可被子类覆盖 |
-| `financial_retriever.py` | 财务检索器 | 继承 BM25Retriever，添加 LLM 查询扩展、表格分数权重（2.0x） |
-| `fast_api.py` | API 服务 | `/fin-rag` 接口，覆盖 mineru 原版。需设置 `sys.path.insert(0, '/app')` |
+| `financial_retriever.py` | 财务检索器 | 继承 BM25Retriever，LLM 查询扩展 + **多轮迭代质检闭环** + 表格分数权重（2.0x） |
+| `fast_api.py` | API 服务 | `/fin-rag` 接口，支持 `max_loops` 和 `enable_validation` 参数 |
 | `smart_analyzer.py` | 智能抽取器 | 目录导航 + 多轮交互 |
 | `md_parser.py` | Markdown 解析 | AST 解析、表格提取 |
 
@@ -70,6 +70,23 @@ llm_services/
 **继承机制**：FinancialRetriever 覆盖父类常量（如 `TABLE_SCORE_MULTIPLIER`）实现差异化配置。
 
 ## 核心策略
+
+### 多轮迭代质检闭环
+
+确保不遗漏关键上下文，自动穿透嵌套附注：
+
+```
+用户查询 → LLM 扩展关键词 → BM25 检索 → LLM 质检 → [不齐备] → next_query → 下一轮检索
+                                              ↓
+                                          [齐备] → 输出
+```
+
+**三大安全阀**（`financial_retriever.py`）：
+- **A: 硬截断** - `max_loops=3` 防止死循环
+- **B: 物理去重** - 按行号去重防止 Token 膨胀
+- **C: 格式降级** - `_parse_eval_response()` 三层降级解析
+
+**质检提示词**：`EVALUATOR_PROMPT` 常量，角色为"财报资料核对员"，只判断资料齐备性，不分析问题。
 
 ### Parent-Child 策略
 
@@ -125,6 +142,14 @@ TABLE_TITLE_MAX_DISTANCE = 50    # 标题距离表格最大距离
 # FinancialRetriever
 TABLE_SCORE_MULTIPLIER = 2.0     # 表格分数权重
 ```
+
+### API 参数（`/fin-rag` 接口）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_tokens` | int | 12000 | 最大返回 Token 数 |
+| `max_loops` | int | 3 | 最大迭代次数（安全阀 A） |
+| `enable_validation` | bool | true | 是否启用 LLM 质检 |
 
 ## 相关文档
 
