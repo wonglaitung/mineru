@@ -1769,11 +1769,13 @@ async def retrieve_from_markdown(
     file: Annotated[UploadFile, File(description="Markdown file (.md)")],
     query: Annotated[str, Form(description="Query string, e.g., '现金流分析'")],
     max_tokens: Annotated[int, Form(description="Maximum tokens to return")] = 12000,
+    max_loops: Annotated[int, Form(description="Maximum validation loops (default: 3)")] = 3,
+    enable_validation: Annotated[bool, Form(description="Enable LLM validation (default: true)")] = True,
 ):
     """
     Financial report retrieval endpoint.
 
-    Uses BM25 + LLM query expansion to extract relevant sections from large Markdown documents.
+    Uses BM25 + LLM query expansion + multi-loop validation to extract relevant sections from large Markdown documents.
     """
     # 1. Validate file type
     if not file.filename or not file.filename.lower().endswith('.md'):
@@ -1791,7 +1793,12 @@ async def retrieve_from_markdown(
 
         # 3. Initialize retriever and execute retrieval
         retriever = FinancialRetriever(temp_file)
-        result = retriever.retrieve_with_expansion(query, max_tokens=max_tokens)
+        result = retriever.retrieve_with_expansion(
+            query,
+            max_tokens=max_tokens,
+            max_loops=max_loops,
+            enable_validation=enable_validation
+        )
 
         # 4. Return result
         return JSONResponse(

@@ -1,6 +1,6 @@
 # Fin-RAG - 财务报告智能检索系统
 
-基于 BM25 + LLM 的轻量级财务报告检索工具，通过 LLM 查询扩展和 Parent-Child 策略，从大型 Markdown 文档中精准抽取相关章节。
+基于 BM25 + LLM 的轻量级财务报告检索工具，通过 LLM 查询扩展、Parent-Child 策略和多轮迭代质检闭环，从大型 Markdown 文档中精准抽取相关章节。
 
 ## 功能特性
 
@@ -9,6 +9,7 @@
 | **表格感知分块** | 自动识别表格边界，确保表格不被切断 |
 | **LLM 查询扩展** | 自动关联相关财务报表（损益表、资产负债表、现金流量表） |
 | **Parent-Child 策略** | 表格标签生成 + 权重增强型混合索引，提升大表格检索效果 |
+| **多轮迭代质检** | LLM 质检闭环，自动穿透嵌套附注，确保不遗漏关键上下文 |
 | **Token 预算控制** | 精确控制输出 Token 数量，适配 64K 上下文限制 |
 | **RESTful API** | 提供 `/fin-rag` 接口，支持 Markdown 文件上传检索 |
 
@@ -64,6 +65,8 @@ curl -X POST "http://localhost:8000/fin-rag" \
 | `file` | file | 是 | Markdown 文件（.md） |
 | `query` | string | 是 | 查询语句，如"现金流分析" |
 | `max_tokens` | int | 否 | 最大返回 Token 数，默认 12000 |
+| `max_loops` | int | 否 | 最大迭代次数，默认 3（安全阀 A） |
+| `enable_validation` | bool | 否 | 是否启用 LLM 质检，默认 true |
 
 **响应示例**：
 
@@ -76,7 +79,9 @@ curl -X POST "http://localhost:8000/fin-rag" \
     "total_chunks": 150,
     "keywords_used": 8,
     "selected": 12,
-    "max_tokens": 8000
+    "max_tokens": 8000,
+    "loops_used": 2,
+    "validation_enabled": true
   },
   "chunks": [
     {
@@ -144,8 +149,23 @@ fin-rag/
 ### 检索流程
 
 ```
-用户查询 → LLM 扩展关键词 → 多关键词 BM25 检索 → 表格权重增强 → Token 预算控制 → 输出上下文
+用户查询 → LLM 扩展关键词 → 多关键词 BM25 检索 → LLM 质检闭环 → Token 预算控制 → 输出上下文
 ```
+
+### 多轮迭代质检闭环
+
+确保不遗漏任何关键上下文，自动穿透嵌套附注：
+
+```
+第 1 轮检索 → LLM 质检 → [不齐备] → 生成 next_query → 第 2 轮检索 → LLM 质检 → [齐备] → 输出
+```
+
+**三大安全阀**：
+| 安全阀 | 说明 |
+|--------|------|
+| **A: 硬截断** | 最多迭代 3 次，防止死循环 |
+| **B: 物理去重** | 按行号去重，防止 Token 膨胀 |
+| **C: 格式降级** | LLM 输出格式崩溃时正则捕获，终极兜底 |
 
 ### Parent-Child 策略
 

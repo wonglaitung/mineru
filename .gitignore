@@ -35,3 +35,6 @@ env/
 
 # Claude
 .claude/
+
+# Secrets (API keys, passwords, etc.)
+set_key.sh
