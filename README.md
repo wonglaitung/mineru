@@ -19,13 +19,13 @@
 
 ```bash
 # 1. 构建镜像
-docker build -t fin-rag .
+docker build -t fin-rag -f docker/Dockerfile .
 
 # 2. 设置环境变量
 export QWEN_API_KEY="your-api-key"
 
 # 3. 启动服务
-./start_fin_rag.sh
+./docker/start_fin_rag.sh
 ```
 
 服务启动后访问：
@@ -128,8 +128,10 @@ TABLE_SCORE_MULTIPLIER = 2.0        # 表格分数权重
 
 ```
 fin-rag/
-├── Dockerfile              # Docker 构建文件
-├── start_fin_rag.sh        # 启动脚本
+├── docker/
+│   ├── Dockerfile          # Docker 构建文件
+│   ├── compose.yaml        # Docker Compose 配置
+│   └── start_fin_rag.sh    # 启动脚本
 ├── requirements.txt        # Python 依赖
 ├── fast_api.py             # FastAPI 服务（覆盖 mineru 原版）
 ├── bm25_retriever.py       # 通用 BM25 检索器
