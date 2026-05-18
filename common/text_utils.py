@@ -124,10 +124,26 @@ def count_tokens(text: str, model: str = "cl100k_base") -> int:
         return len(enc.encode(text))
     except ImportError:
         # tiktoken 未安装，使用估算
-        # 中文约 1.5 token/字，英文约 0.25 token/字符
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-        other_chars = len(text) - chinese_chars
-        return int(chinese_chars * 1.5 + other_chars * 0.25)
+        return _estimate_tokens(text)
+    except Exception:
+        # tiktoken 网络错误或其他异常，使用估算
+        return _estimate_tokens(text)
+
+
+def _estimate_tokens(text: str) -> int:
+    """
+    估算文本的 Token 数量（不依赖外部库）
+
+    Args:
+        text: 要估算的文本
+
+    Returns:
+        估算的 Token 数量
+    """
+    # 中文约 1.5 token/字，英文约 0.25 token/字符
+    chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    other_chars = len(text) - chinese_chars
+    return int(chinese_chars * 1.5 + other_chars * 0.25)
 
 
 def estimate_cost(
